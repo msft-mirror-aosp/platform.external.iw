@@ -6,8 +6,8 @@ genrule {
     out: ["version.c"],
 }
 
-cc_binary {
-    name: "iw",
+cc_defaults {
+    name: "iw_common",
 
     srcs: [
         "iw.c",
@@ -59,4 +59,17 @@ cc_binary {
 
     ldflags: ["-Wl,--no-gc-sections"],
     static_libs: ["libnl"],
+}
+
+cc_binary {
+    name: "iw",
+
+    defaults: ["iw_common"],
+}
+
+cc_binary {
+    name: "iw_vendor",
+    stem: "iw",
+    vendor: true,
+    defaults: ["iw_common"],
 }
