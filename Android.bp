@@ -58,7 +58,7 @@ cc_defaults {
     ],
 
     ldflags: ["-Wl,--no-gc-sections"],
-    shared_libs: ["libnl"],
+    static_libs: ["libnl"],
 }
 
 cc_binary {
