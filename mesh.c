@@ -1,3 +1,4 @@
+#include <net/if.h>
 #include <errno.h>
 #include <string.h>
 
@@ -11,7 +12,6 @@
 #include "iw.h"
 
 SECTION(mesh);
-SECTION(mesh_param);
 
 
 typedef struct _any_t {
@@ -194,7 +194,7 @@ static void _print_s32_in_dBm(struct nlattr *a)
 
 
 /* The current mesh parameters */
-static const struct mesh_param_descr _mesh_param_descrs[] =
+const static struct mesh_param_descr _mesh_param_descrs[] =
 {
 	{"mesh_retry_timeout",
 	NL80211_MESHCONF_RETRY_TIMEOUT,
@@ -265,17 +265,11 @@ static const struct mesh_param_descr _mesh_param_descrs[] =
 	_my_nla_put_u16, _parse_u16, _print_u16_in_TUs},
 	{"mesh_plink_timeout", NL80211_MESHCONF_PLINK_TIMEOUT,
 	_my_nla_put_u32, _parse_u32, _print_u32_in_seconds},
-	{"mesh_connected_to_gate", NL80211_MESHCONF_CONNECTED_TO_GATE,
-	_my_nla_put_u8, _parse_u8_as_bool, _print_u8},
-	{"mesh_nolearn", NL80211_MESHCONF_NOLEARN,
-	_my_nla_put_u8, _parse_u8_as_bool, _print_u8},
-	{"mesh_connected_to_as", NL80211_MESHCONF_CONNECTED_TO_AS,
-	_my_nla_put_u8, _parse_u8_as_bool, _print_u8},
 };
 
 static void print_all_mesh_param_descr(void)
 {
-	unsigned int i;
+	int i;
 
 	printf("Possible mesh parameters are:\n");
 
@@ -285,7 +279,7 @@ static void print_all_mesh_param_descr(void)
 
 static const struct mesh_param_descr *find_mesh_param(const char *name)
 {
-	unsigned int i;
+	int i;
 
 	/* Find out what mesh parameter we want to change. */
 	for (i = 0; i < ARRAY_SIZE(_mesh_param_descrs); i++) {
@@ -293,11 +287,13 @@ static const struct mesh_param_descr *find_mesh_param(const char *name)
 			return _mesh_param_descrs + i;
 	}
 
+	print_all_mesh_param_descr();
 	return NULL;
 }
 
 /* Setter */
 static int set_interface_meshparam(struct nl80211_state *state,
+				   struct nl_cb *cb,
 				   struct nl_msg *msg,
 				   int argc, char **argv,
 				   enum id_input id)
@@ -305,16 +301,14 @@ static int set_interface_meshparam(struct nl80211_state *state,
 	const struct mesh_param_descr *mdescr;
 	struct nlattr *container;
 	uint32_t ret;
-	int err = 2;
+	int err;
 
 	container = nla_nest_start(msg, NL80211_ATTR_MESH_PARAMS);
 	if (!container)
 		return -ENOBUFS;
 
-	if (!argc) {
-		print_all_mesh_param_descr();
+	if (!argc)
 		return 1;
-	}
 
 	while (argc) {
 		const char *name;
@@ -342,11 +336,8 @@ static int set_interface_meshparam(struct nl80211_state *state,
 		}
 
 		mdescr = find_mesh_param(name);
-		if (!mdescr) {
-			printf("Could not find the parameter %s.\n", name);
-			print_all_mesh_param_descr();
+		if (!mdescr)
 			return 2;
-		}
 
 		/* Parse the new value */
 		ret = mdescr->parse_fn(value, &any);
@@ -398,50 +389,42 @@ static int print_mesh_param_handler(struct nl_msg *msg, void *arg)
 		return -EINVAL;
 
 	if (!mdescr) {
-		unsigned int i;
+		int i;
 
-		/* print out all the supported mesh parameters */
 		for (i = 0; i < ARRAY_SIZE(_mesh_param_descrs); i++) {
 			mdescr = &_mesh_param_descrs[i];
-			if (mesh_params[mdescr->mesh_param_num]) {
-				printf("%s = ", mdescr->name);
-				mdescr->nla_print_fn(mesh_params[mdescr->mesh_param_num]);
-				printf("\n");
-			}
+			printf("%s = ", mdescr->name);
+			mdescr->nla_print_fn(mesh_params[mdescr->mesh_param_num]);
+			printf("\n");
 		}
 		return NL_SKIP;
 	}
 
-	/* print out the requested mesh parameter */
-	if (mesh_params[mdescr->mesh_param_num]) {
-		mdescr->nla_print_fn(mesh_params[mdescr->mesh_param_num]);
-		printf("\n");
-	}
+	/* print out the mesh parameter */
+	mdescr->nla_print_fn(mesh_params[mdescr->mesh_param_num]);
+	printf("\n");
 	return NL_SKIP;
 }
 
 static int get_interface_meshparam(struct nl80211_state *state,
+				   struct nl_cb *cb,
 				   struct nl_msg *msg,
 				   int argc, char **argv,
 				   enum id_input id)
 {
 	const struct mesh_param_descr *mdescr = NULL;
 
-	if (argc == 0) {
-		print_all_mesh_param_descr();
+	if (argc > 1)
 		return 1;
-	} else if (argc == 1) {
+
+	if (argc == 1) {
 		mdescr = find_mesh_param(argv[0]);
-		if (!mdescr) {
-			printf("Could not find the parameter %s.\n", argv[0]);
-			print_all_mesh_param_descr();
+		if (!mdescr)
 			return 2;
-		}
-	} else {
-		return 1;
 	}
 
-	register_handler(print_mesh_param_handler, (void *)mdescr);
+	nl_cb_set(cb, NL_CB_VALID, NL_CB_CUSTOM,
+		  print_mesh_param_handler, (void *)mdescr);
 	return 0;
 }
 
@@ -449,28 +432,39 @@ COMMAND(get, mesh_param, "[<param>]",
 	NL80211_CMD_GET_MESH_PARAMS, 0, CIB_NETDEV, get_interface_meshparam,
 	"Retrieve mesh parameter (run command without any to see available ones).");
 
-static int dump_interface_meshparam(struct nl80211_state *state,
-				    struct nl_msg *msg,
-				    int argc, char **argv,
-				    enum id_input id)
-{
-	register_handler(print_mesh_param_handler, NULL);
-	return 0;
-}
-
-COMMAND(mesh_param, dump, "",
-	NL80211_CMD_GET_MESH_PARAMS, 0, CIB_NETDEV, dump_interface_meshparam,
-	"List all supported mesh parameters");
-
-static int join_mesh(struct nl80211_state *state,
+static int join_mesh(struct nl80211_state *state, struct nl_cb *cb,
 		     struct nl_msg *msg, int argc, char **argv,
 		     enum id_input id)
 {
 	struct nlattr *container;
 	float rate;
 	unsigned char rates[NL80211_MAX_SUPP_RATES];
-	int bintval, dtim_period, n_rates = 0;
+	int bintval, dtim_period, i, n_rates = 0;
 	char *end, *value = NULL, *sptr = NULL;
+	unsigned long freq = 0;
+	static const struct {
+		const char *name;
+		unsigned int width;
+		int freq1_diff;
+		int chantype; /* for older kernel */
+	} *chanmode_selected = NULL, chanmode[] = {
+		{ .name = "HT20",
+		  .width = NL80211_CHAN_WIDTH_20,
+		  .freq1_diff = 0,
+		  .chantype = NL80211_CHAN_HT20 },
+		{ .name = "HT40+",
+		  .width = NL80211_CHAN_WIDTH_40,
+		  .freq1_diff = 10,
+		  .chantype = NL80211_CHAN_HT40PLUS },
+		{ .name = "HT40-",
+		  .width = NL80211_CHAN_WIDTH_40,
+		  .freq1_diff = -10,
+		  .chantype = NL80211_CHAN_HT40MINUS },
+		{ .name = "NOHT",
+		  .width = NL80211_CHAN_WIDTH_20_NOHT,
+		  .freq1_diff = 0,
+		  .chantype = NL80211_CHAN_NO_HT },
+	};
 
 	if (argc < 1)
 		return 1;
@@ -481,20 +475,40 @@ static int join_mesh(struct nl80211_state *state,
 
 	/* freq */
 	if (argc > 1 && strcmp(argv[0], "freq") == 0) {
-		struct chandef chandef;
-		int err, parsed;
+		argv++;
+		argc--;
 
-		err = parse_freqchan(&chandef, false, argc - 1, argv + 1,
-				     &parsed);
-		if (err)
-			return err;
+		freq = strtoul(argv[0], &end, 10);
+		if (*end != '\0')
+			return 1;
+		NLA_PUT_U32(msg, NL80211_ATTR_WIPHY_FREQ, freq);
 
-		argv += parsed + 1;
-		argc -= parsed + 1;
+		argv++;
+		argc--;
+	}
 
-		err = put_chandef(msg, &chandef);
-		if (err)
-			return err;
+	/* channel type */
+	if (argc) {
+		for (i = 0; i < ARRAY_SIZE(chanmode); i++) {
+			if (strcasecmp(chanmode[i].name, argv[0]) == 0) {
+				chanmode_selected = &chanmode[i];
+				break;
+			}
+		}
+
+		if (chanmode_selected) {
+			NLA_PUT_U32(msg, NL80211_ATTR_CHANNEL_WIDTH,
+				    chanmode_selected->width);
+			NLA_PUT_U32(msg, NL80211_ATTR_CENTER_FREQ1,
+				    freq + chanmode_selected->freq1_diff);
+			if (chanmode_selected->chantype != -1)
+				NLA_PUT_U32(msg,
+					    NL80211_ATTR_WIPHY_CHANNEL_TYPE,
+					    chanmode_selected->chantype);
+
+			argv++;
+			argc--;
+		}
 	}
 
 	/* basic rates */
@@ -584,11 +598,11 @@ static int join_mesh(struct nl80211_state *state,
 
 	if (!argc)
 		return 0;
-	return set_interface_meshparam(state, msg, argc, argv, id);
+	return set_interface_meshparam(state, cb, msg, argc, argv, id);
  nla_put_failure:
 	return -ENOBUFS;
 }
-COMMAND(mesh, join, "<mesh ID> [[freq <freq in MHz> <NOHT|HT20|HT40+|HT40-|80MHz>]"
+COMMAND(mesh, join, "<mesh ID> [[freq <freq in MHz> <HT20|HT40+|HT40-|NOHT>]"
 	" [basic-rates <rate in Mbps,rate2,...>]], [mcast-rate <rate in Mbps>]"
 	" [beacon-interval <time in TUs>] [dtim-period <value>]"
 	" [vendor_sync on|off] [<param>=<value>]*",
@@ -597,7 +611,7 @@ COMMAND(mesh, join, "<mesh ID> [[freq <freq in MHz> <NOHT|HT20|HT40+|HT40-|80MHz
 	"mcast-rate and mesh parameters. Basic-rates are applied only if\n"
 	"frequency is provided.");
 
-static int leave_mesh(struct nl80211_state *state,
+static int leave_mesh(struct nl80211_state *state, struct nl_cb *cb,
 		      struct nl_msg *msg, int argc, char **argv,
 		      enum id_input id)
 {

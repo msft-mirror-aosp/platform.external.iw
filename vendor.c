@@ -1,3 +1,4 @@
+#include <net/if.h>
 #include <errno.h>
 #include <string.h>
 
@@ -12,37 +13,9 @@
 
 SECTION(vendor);
 
-static int print_vendor_response(struct nl_msg *msg, void *arg)
-{
-	struct nlattr *attr;
-	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
-	bool print_ascii = (bool) arg;
-	uint8_t *data;
-	int len;
-
-	attr = nla_find(genlmsg_attrdata(gnlh, 0),
-			genlmsg_attrlen(gnlh, 0),
-			NL80211_ATTR_VENDOR_DATA);
-	if (!attr) {
-		fprintf(stderr, "vendor data attribute missing!\n");
-		return NL_SKIP;
-	}
-
-	data = (uint8_t *) nla_data(attr);
-	len = nla_len(attr);
-
-	if (print_ascii)
-		iw_hexdump("vendor response", data, len);
-	else
-		fwrite(data, 1, len, stdout);
-
-	return NL_OK;
-}
-
 static int read_file(FILE *file, char *buf, size_t size)
 {
-	size_t count = 0;
-	int data;
+	int data, count = 0;
 
 	while ((data = fgetc(file)) != EOF) {
 		if (count >= size)
@@ -54,10 +27,10 @@ static int read_file(FILE *file, char *buf, size_t size)
 	return count;
 }
 
-static int read_hex(unsigned int argc, char **argv, char *buf, size_t size)
+static int read_hex(int argc, char **argv, char *buf, size_t size)
 {
-	unsigned int i, data;
-	int res;
+	int i, res;
+	unsigned int data;
 
 	if (argc > size)
 		return -EINVAL;
@@ -72,7 +45,7 @@ static int read_hex(unsigned int argc, char **argv, char *buf, size_t size)
 	return argc;
 }
 
-static int handle_vendor(struct nl80211_state *state,
+static int handle_vendor(struct nl80211_state *state, struct nl_cb *cb,
 			 struct nl_msg *msg, int argc, char **argv,
 			 enum id_input id)
 {
@@ -83,19 +56,15 @@ static int handle_vendor(struct nl80211_state *state,
 	FILE *file = NULL;
 
 	if (argc < 3)
-		return 1;
+		return -EINVAL;
 
 	res = sscanf(argv[0], "0x%x", &oui);
-	if (res != 1) {
-		printf("Vendor command must start with 0x\n");
-		return 2;
-	}
+	if (res != 1)
+		return -EINVAL;
 
 	res = sscanf(argv[1], "0x%x", &subcmd);
-	if (res != 1) {
-		printf("Sub command must start with 0x\n");
-		return 2;
-	}
+	if (res != 1)
+		return -EINVAL;
 
 	if (!strcmp(argv[2], "-"))
 		file = stdin;
@@ -107,8 +76,7 @@ static int handle_vendor(struct nl80211_state *state,
 
 	if (file) {
 		count = read_file(file, buf, sizeof(buf));
-		if (file != stdin)
-			fclose(file);
+		fclose(file);
 	} else
 		count = read_hex(argc - 2, &argv[2], buf, sizeof(buf));
 
@@ -121,27 +89,7 @@ static int handle_vendor(struct nl80211_state *state,
 	return 0;
 
 nla_put_failure:
-	if (file && file != stdin)
-		fclose(file);
 	return -ENOBUFS;
 }
 
-static int handle_vendor_recv(struct nl80211_state *state,
-			      struct nl_msg *msg, int argc,
-			      char **argv, enum id_input id)
-{
-	register_handler(print_vendor_response, (void *) true);
-	return handle_vendor(state, msg, argc, argv, id);
-}
-
-static int handle_vendor_recv_bin(struct nl80211_state *state,
-				  struct nl_msg *msg, int argc,
-				  char **argv, enum id_input id)
-{
-	register_handler(print_vendor_response, (void *) false);
-	return handle_vendor(state, msg, argc, argv, id);
-}
-
 COMMAND(vendor, send, "<oui> <subcmd> <filename|-|hex data>", NL80211_CMD_VENDOR, 0, CIB_NETDEV, handle_vendor, "");
-COMMAND(vendor, recv, "<oui> <subcmd> <filename|-|hex data>", NL80211_CMD_VENDOR, 0, CIB_NETDEV, handle_vendor_recv, "");
-COMMAND(vendor, recvbin, "<oui> <subcmd> <filename|-|hex data>", NL80211_CMD_VENDOR, 0, CIB_NETDEV, handle_vendor_recv_bin, "");

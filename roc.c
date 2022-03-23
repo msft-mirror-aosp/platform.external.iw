@@ -1,3 +1,4 @@
+#include <net/if.h>
 #include <errno.h>
 #include <string.h>
 
@@ -12,7 +13,7 @@
 
 SECTION(roc);
 
-static int handle_roc_start(struct nl80211_state *state,
+static int handle_roc_start(struct nl80211_state *state, struct nl_cb *cb,
 			    struct nl_msg *msg, int argc, char **argv,
 			    enum id_input id)
 {
