@@ -170,8 +170,12 @@ static int print_phy_handler(struct nl_msg *msg, void *arg)
 				struct nlattr *nl_iftype;
 				int rem_band;
 
-				nla_for_each_nested(nl_iftype, tb_band[NL80211_BAND_ATTR_IFTYPE_DATA], rem_band)
+				nla_for_each_nested(nl_iftype,
+						    tb_band[NL80211_BAND_ATTR_IFTYPE_DATA],
+						    rem_band) {
 					print_he_info(nl_iftype);
+					print_eht_info(nl_iftype, last_band);
+				}
 			}
 			if (tb_band[NL80211_BAND_ATTR_FREQS]) {
 				if (!band_had_freq) {
@@ -702,6 +706,7 @@ broken_combination:
 		ext_feat_print(tb, 4WAY_HANDSHAKE_AP_PSK, "AP mode PSK offload support");
 		ext_feat_print(tb, BSS_COLOR, "BSS coloring support");
 		ext_feat_print(tb, FILS_CRYPTO_OFFLOAD, "FILS crypto offload");
+		ext_feat_print(tb, RADAR_BACKGROUND, "Radar background support");
 	}
 
 	if (tb_msg[NL80211_ATTR_COALESCE_RULE]) {
@@ -712,7 +717,7 @@ broken_combination:
 		rule = nla_data(tb_msg[NL80211_ATTR_COALESCE_RULE]);
 		pat = &rule->pat;
 		printf("\t\t * Maximum %u coalesce rules supported\n"
-		       "\t\t * Each rule contains upto %u patterns of %u-%u bytes,\n"
+		       "\t\t * Each rule contains up to %u patterns of %u-%u bytes,\n"
 		       "\t\t   maximum packet offset %u bytes\n"
 		       "\t\t * Maximum supported coalescing delay %u msecs\n",
 			rule->max_rules, pat->max_patterns, pat->min_pattern_len,
