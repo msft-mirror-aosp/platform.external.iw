@@ -76,11 +76,20 @@ cc_defaults {
         "p2p.c",
         "vendor.c",
         "sections.c",
+        "ap.c",
+        "bloom.c",
+        "ftm.c",
+        "measurements.c",
+        "mgmt.c",
+        "nan.c",
+        "sar.c",
+        "sha256.c",
 
         ":iw_version",
     ],
 
     cflags: [
+        "-fno-strict-aliasing",
         "-D_GNU_SOURCE",
         "-DCONFIG_LIBNL20",
 
