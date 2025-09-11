@@ -13,13 +13,6 @@
 
 SECTION(reg);
 
-#define MHZ_TO_KHZ(freq) ((freq) * 1000)
-#define KHZ_TO_MHZ(freq) ((freq) / 1000)
-#define DBI_TO_MBI(gain) ((gain) * 100)
-#define MBI_TO_DBI(gain) ((gain) / 100)
-#define DBM_TO_MBM(gain) ((gain) * 100)
-#define MBM_TO_DBM(gain) ((gain) / 100)
-
 static bool isalpha_upper(char letter)
 {
 	if (letter >= 65 && letter <= 90)
@@ -211,6 +204,7 @@ static int print_reg_handler(struct nl_msg *msg, void *arg)
 		PARSE_FLAG(NL80211_RRF_NO_160MHZ, "NO-160MHZ");
 		PARSE_FLAG(NL80211_RRF_NO_HE, "NO-HE");
 		PARSE_FLAG(NL80211_RRF_NO_320MHZ, "NO-320MHZ");
+		PARSE_FLAG(NL80211_RRF_NO_EHT, "NO-EHT");
 
 		/* Kernels that support NO_IR always turn on both flags */
 		if ((flags & NL80211_RRF_NO_IR) && (flags & __NL80211_RRF_NO_IBSS)) {
