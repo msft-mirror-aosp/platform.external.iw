@@ -295,6 +295,8 @@ static void parse_wowlan_wake_event(struct nlattr **attrs)
 		printf("\t* TCP connection lost\n");
 	if (tb[NL80211_WOWLAN_TRIG_WAKEUP_TCP_NOMORETOKENS])
 		printf("\t* TCP connection ran out of tokens\n");
+	if (tb[NL80211_WOWLAN_TRIG_UNPROTECTED_DEAUTH_DISASSOC])
+		printf("\t* unprotected deauth/disassoc\n");
 }
 
 extern struct vendor_event *__start_vendor_event[];
@@ -942,7 +944,7 @@ static int print_event(struct nl_msg *msg, void *arg)
 
 			memset(buf, 0, 255);
 			strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm);
-			printf("[%s.%06lu]: ", buf, args->ts.tv_usec);
+			printf("[%s.%06lu]: ", buf, (unsigned long )args->ts.tv_usec);
 		} else {
 			printf("%llu.%06llu: ", usecs/1000000, usecs % 1000000);
 		}

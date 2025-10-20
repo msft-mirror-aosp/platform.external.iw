@@ -369,6 +369,37 @@ char *channel_width_name(enum nl80211_chan_width width)
 	}
 }
 
+static void print_channel(struct nlattr **tb)
+{
+	uint32_t freq = nla_get_u32(tb[NL80211_ATTR_WIPHY_FREQ]);
+
+	printf("channel %d (%d MHz)",
+	       ieee80211_frequency_to_channel(freq), freq);
+
+	if (tb[NL80211_ATTR_CHANNEL_WIDTH]) {
+		printf(", width: %s",
+			channel_width_name(nla_get_u32(tb[NL80211_ATTR_CHANNEL_WIDTH])));
+		if (tb[NL80211_ATTR_CENTER_FREQ1])
+			printf(", center1: %d MHz",
+				nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ1]));
+		if (tb[NL80211_ATTR_CENTER_FREQ2])
+			printf(", center2: %d MHz",
+				nla_get_u32(tb[NL80211_ATTR_CENTER_FREQ2]));
+
+		if (tb[NL80211_ATTR_PUNCT_BITMAP]) {
+			uint32_t punct = nla_get_u32(tb[NL80211_ATTR_PUNCT_BITMAP]);
+
+			if (punct)
+				printf(", punctured: 0x%x", punct);
+		}
+	} else if (tb[NL80211_ATTR_WIPHY_CHANNEL_TYPE]) {
+		enum nl80211_channel_type channel_type;
+
+		channel_type = nla_get_u32(tb[NL80211_ATTR_WIPHY_CHANNEL_TYPE]);
+		printf(" %s", channel_type_name(channel_type));
+	}
+}
+
 static int print_iface_handler(struct nl_msg *msg, void *arg)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
@@ -412,27 +443,8 @@ static int print_iface_handler(struct nl_msg *msg, void *arg)
 	if (!wiphy && tb_msg[NL80211_ATTR_WIPHY])
 		printf("%s\twiphy %d\n", indent, nla_get_u32(tb_msg[NL80211_ATTR_WIPHY]));
 	if (tb_msg[NL80211_ATTR_WIPHY_FREQ]) {
-		uint32_t freq = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY_FREQ]);
-
-		printf("%s\tchannel %d (%d MHz)", indent,
-		       ieee80211_frequency_to_channel(freq), freq);
-
-		if (tb_msg[NL80211_ATTR_CHANNEL_WIDTH]) {
-			printf(", width: %s",
-				channel_width_name(nla_get_u32(tb_msg[NL80211_ATTR_CHANNEL_WIDTH])));
-			if (tb_msg[NL80211_ATTR_CENTER_FREQ1])
-				printf(", center1: %d MHz",
-					nla_get_u32(tb_msg[NL80211_ATTR_CENTER_FREQ1]));
-			if (tb_msg[NL80211_ATTR_CENTER_FREQ2])
-				printf(", center2: %d MHz",
-					nla_get_u32(tb_msg[NL80211_ATTR_CENTER_FREQ2]));
-		} else if (tb_msg[NL80211_ATTR_WIPHY_CHANNEL_TYPE]) {
-			enum nl80211_channel_type channel_type;
-
-			channel_type = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY_CHANNEL_TYPE]);
-			printf(" %s", channel_type_name(channel_type));
-		}
-
+		printf("%s\t", indent);
+		print_channel(tb_msg);
 		printf("\n");
 	}
 
@@ -453,6 +465,38 @@ static int print_iface_handler(struct nl_msg *msg, void *arg)
 		uint8_t use_4addr = nla_get_u8(tb_msg[NL80211_ATTR_4ADDR]);
 		if (use_4addr)
 			printf("%s\t4addr: on\n", indent);
+	}
+
+	if (tb_msg[NL80211_ATTR_MLO_LINKS]) {
+		struct nlattr *link;
+		int n;
+
+		printf("%s\tMLD with links:\n", indent);
+
+		nla_for_each_nested(link, tb_msg[NL80211_ATTR_MLO_LINKS], n) {
+			struct nlattr *tb[NL80211_ATTR_MAX + 1];
+
+			nla_parse_nested(tb, NL80211_ATTR_MAX, link, NULL);
+			printf("%s\t - link", indent);
+			if (tb[NL80211_ATTR_MLO_LINK_ID])
+				printf(" ID %2d", nla_get_u32(tb[NL80211_ATTR_MLO_LINK_ID]));
+			if (tb[NL80211_ATTR_MAC]) {
+				char buf[20];
+
+				mac_addr_n2a(buf, nla_data(tb[NL80211_ATTR_MAC]));
+				printf(" link addr %s", buf);
+			}
+			if (tb[NL80211_ATTR_WIPHY_FREQ]) {
+				printf("\n%s\t   ", indent);
+				print_channel(tb);
+			}
+			if (tb[NL80211_ATTR_WIPHY_TX_POWER_LEVEL]) {
+				int32_t txp = nla_get_u32(tb[NL80211_ATTR_WIPHY_TX_POWER_LEVEL]);
+
+				printf("\n%s\t   txpower %d.%.2d dBm", indent, txp / 100, txp % 100);
+			}
+			printf("\n");
+		}
 	}
 
 	return NL_SKIP;
@@ -669,7 +713,7 @@ static int handle_chanfreq(struct nl80211_state *state, struct nl_msg *msg,
 	int parsed;
 	char *end;
 
-	res = parse_freqchan(&chandef, chan, argc, argv, &parsed);
+	res = parse_freqchan(&chandef, chan, argc, argv, &parsed, false);
 	if (res)
 		return res;
 
@@ -992,3 +1036,26 @@ COMMAND(set, tidconf, "[peer <MAC address>] tids <mask> [override] [sretry <num>
 	"  $ iw dev wlan0 set tidconf peer xx:xx:xx:xx:xx:xx tids 0x2 bitrates auto\n"
 	"  $ iw dev wlan0 set tidconf peer xx:xx:xx:xx:xx:xx tids 0x2 bitrates limit vht-mcs-5 4:9\n"
 	);
+
+static int handle_set_epcs(struct nl80211_state *state,
+			   struct nl_msg *msg,
+			   int argc, char **argv,
+			   enum id_input id)
+{
+	if (argc != 1)
+		return 1;
+
+	if (strcmp(argv[0], "enable") == 0)
+		NLA_PUT_FLAG(msg, NL80211_ATTR_EPCS);
+	else if (strcmp(argv[0], "disable") != 0)
+		return 1;
+
+	return 0;
+
+nla_put_failure:
+	return 1;
+}
+
+COMMAND(set, epcs, "<enable|disable>",
+	NL80211_CMD_EPCS_CFG, 0, CIB_NETDEV, handle_set_epcs,
+	"Enable/Disable EPCS support");
