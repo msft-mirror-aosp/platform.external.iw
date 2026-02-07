@@ -118,3 +118,10 @@ cc_binary {
     vendor: true,
     defaults: ["iw_common"],
 }
+
+cc_binary {
+    name: "iw_recovery",
+    stem: "iw",
+    recovery: true,
+    defaults: ["iw_common"],
+}
