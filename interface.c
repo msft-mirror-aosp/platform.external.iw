@@ -17,6 +17,7 @@
 			"otherbss: show frames from other BSSes\n"\
 			"cook:     use cooked mode\n"\
 			"active:   use active mode (ACK incoming unicast packets)\n"\
+			"skiptx:   do not pass local TX packets\n"\
 			"mumimo-groupid <GROUP_ID>: use MUMIMO according to a group id\n"\
 			"mumimo-follow-mac <MAC_ADDRESS>: use MUMIMO according to a MAC address"
 
@@ -30,6 +31,7 @@ static char *mntr_flags[NL80211_MNTR_FLAG_MAX + 1] = {
 	"otherbss",
 	"cook",
 	"active",
+	"skiptx",
 };
 
 static int parse_mumimo_options(int *_argc, char ***_argv, struct nl_msg *msg)
